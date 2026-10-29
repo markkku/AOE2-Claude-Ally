@@ -1,0 +1,375 @@
+; ClaudeAI.per - Claude'i tiimikaaslane, v1.
+; Majapidamine (kyla, majad, farmid, laod, veski) ja tootmine on siin. Strateegilised otsused
+; (mida toota, mida ja mitu hoonet ehitada, millal rynnata, kellele appi minna, ajastud) tulevad Claude'ilt:
+;   Python -> claude_cmd.xsdat -> (xs-script-call "claudeAiPoll") -> goal'id -> need reeglid
+; Armee liigutamine: (xs-script-call "claudeAiArmy") (vt claude_ai.xs).
+;
+; Goal'id PEAVAD klappima claude_ai.xs konstantidega.
+
+(defconst gl-my-player 101)
+(defconst gl-seq 102)
+(defconst gl-cmd-new 103)
+(defconst gl-unit1 105)
+(defconst gl-unit2 106)
+(defconst gl-mode 107)
+(defconst gl-target 108)
+(defconst gl-ageup 109)
+(defconst gl-vil-target 110)
+(defconst gl-want-vil 111)
+(defconst gl-under-attack 112)
+(defconst gl-train-ok 113)
+(defconst gl-saving 114)
+(defconst gl-uses-militia 121)
+(defconst gl-uses-spear 122)
+(defconst gl-uses-archer 123)
+(defconst gl-uses-skirm 124)
+(defconst gl-uses-knight 125)
+(defconst gl-uses-cavarcher 126)
+(defconst gl-uses-siege 127)
+(defconst gl-uses-monk 128)
+; 141..152 Claude'i hoonete sihtarvud, 161..172 "veel puudu" lipud (arvutab claude_ai.xs)
+(defconst gl-target-barracks 141)
+(defconst gl-more-barracks 161)
+(defconst gl-more-range 162)
+(defconst gl-more-stable 163)
+(defconst gl-more-workshop 164)
+(defconst gl-more-blacksmith 165)
+(defconst gl-more-market 166)
+(defconst gl-more-monastery 167)
+(defconst gl-more-university 168)
+(defconst gl-more-castle 169)
+(defconst gl-more-town-center 170)
+(defconst gl-more-tower 171)
+(defconst gl-more-dock 172)
+
+(defconst t-poll 1)
+(defconst t-army 2)
+
+; include peab olema parast koiki load-kaske (siin neid pole)
+(include "claude_ai.xs")
+
+; ---------------------------------------------------------------- algus
+(defrule
+	(true)
+=>
+	(up-modify-goal gl-my-player c:= my-player-number)
+	(set-goal gl-unit1 3)
+	(set-goal gl-unit2 2)
+	(set-goal gl-mode 0)
+	(set-goal gl-target 0)
+	(set-goal gl-ageup 1)
+	(set-goal gl-vil-target 60)
+	(set-goal gl-want-vil 1)
+	(set-goal gl-train-ok 1)
+	(set-goal gl-target-barracks 1)
+	(set-strategic-number sn-percent-civilian-explorers 0)
+	(set-strategic-number sn-cap-civilian-explorers 0)
+	(set-strategic-number sn-total-number-explorers 1)
+	(set-strategic-number sn-number-explore-groups 1)
+	(set-strategic-number sn-initial-exploration-required 0)
+	(set-strategic-number sn-number-attack-groups 0)
+	(set-strategic-number sn-cap-civilian-builders 4)
+	(set-strategic-number sn-maximum-town-size 30)
+	(set-strategic-number sn-camp-max-distance 25)
+	(set-strategic-number sn-mill-max-distance 25)
+	(set-strategic-number sn-enable-boar-hunting 0)
+	(set-strategic-number sn-enable-training-queue 1)
+	(xs-script-call "claudeAiInit")
+	(enable-timer t-poll 3)
+	(enable-timer t-army 8)
+	(disable-self))
+
+; ---------------------------------------------------------------- Claude'i sild
+(defrule
+	(true)
+=>
+	(set-goal gl-under-attack 0))
+
+(defrule
+	(town-under-attack)
+=>
+	(set-goal gl-under-attack 1))
+
+(defrule
+	(timer-triggered t-poll)
+=>
+	(xs-script-call "claudeAiPoll")
+	(disable-timer t-poll)
+	(enable-timer t-poll 3))
+
+(defrule
+	(timer-triggered t-army)
+=>
+	(xs-script-call "claudeAiArmy")
+	(disable-timer t-army)
+	(enable-timer t-army 8))
+
+(defrule
+	(goal gl-cmd-new 1)
+=>
+	(set-goal gl-cmd-new 0))
+
+; ---------------------------------------------------------------- kogujad ajastu jargi
+(defrule
+	(current-age == dark-age)
+=>
+	(set-strategic-number sn-food-gatherer-percentage 60)
+	(set-strategic-number sn-wood-gatherer-percentage 40)
+	(set-strategic-number sn-gold-gatherer-percentage 0)
+	(set-strategic-number sn-stone-gatherer-percentage 0))
+
+(defrule
+	(current-age == feudal-age)
+=>
+	(set-strategic-number sn-food-gatherer-percentage 45)
+	(set-strategic-number sn-wood-gatherer-percentage 35)
+	(set-strategic-number sn-gold-gatherer-percentage 20)
+	(set-strategic-number sn-stone-gatherer-percentage 0))
+
+(defrule
+	(current-age >= castle-age)
+=>
+	(set-strategic-number sn-food-gatherer-percentage 40)
+	(set-strategic-number sn-wood-gatherer-percentage 28)
+	(set-strategic-number sn-gold-gatherer-percentage 27)
+	(set-strategic-number sn-stone-gatherer-percentage 5))
+
+; ---------------------------------------------------------------- kylaelanikud ja majad
+(defrule
+	(goal gl-want-vil 1)
+	(can-train villager)
+=>
+	(train villager))
+
+(defrule
+	(housing-headroom < 5)
+	(population-headroom > 0)
+	(up-pending-objects c: house < 1)
+	(can-build house)
+=>
+	(build house))
+
+(defrule
+	(current-age >= feudal-age)
+	(housing-headroom < 10)
+	(population-headroom > 0)
+	(up-pending-objects c: house < 2)
+	(can-build house)
+=>
+	(build house))
+
+; ---------------------------------------------------------------- ladestuskohad ja farmid
+(defrule
+	(building-type-count-total lumber-camp < 1)
+	(resource-found wood)
+	(can-build lumber-camp)
+=>
+	(build lumber-camp))
+
+(defrule
+	(building-type-count-total lumber-camp < 4)
+	(unit-type-count villager > 15)
+	(dropsite-min-distance wood > 4)
+	(resource-found wood)
+	(up-pending-objects c: lumber-camp < 1)
+	(can-build lumber-camp)
+=>
+	(build lumber-camp))
+
+(defrule
+	(building-type-count-total mill < 1)
+	(unit-type-count villager >= 7)
+	(can-build mill)
+=>
+	(build mill))
+
+(defrule
+	(current-age >= feudal-age)
+	(building-type-count-total mining-camp < 1)
+	(resource-found gold)
+	(can-build mining-camp)
+=>
+	(build mining-camp))
+
+(defrule
+	(current-age >= castle-age)
+	(building-type-count-total mining-camp < 3)
+	(dropsite-min-distance gold > 5)
+	(resource-found gold)
+	(up-pending-objects c: mining-camp < 1)
+	(can-build mining-camp)
+=>
+	(build mining-camp))
+
+(defrule
+	(building-type-count-total mill > 0)
+	(unit-type-count villager > 12)
+	(idle-farm-count < 1)
+	(building-type-count-total farm < 30)
+	(can-build farm)
+=>
+	(build farm))
+
+; ---------------------------------------------------------------- ajastud ja nende eeltingimused
+(defrule
+	(goal gl-ageup 1)
+	(can-research feudal-age)
+=>
+	(research feudal-age))
+
+(defrule
+	(goal gl-ageup 1)
+	(can-research castle-age)
+=>
+	(research castle-age))
+
+(defrule
+	(goal gl-ageup 1)
+	(can-research imperial-age)
+=>
+	(research imperial-age))
+
+; ---------------------------------------------------------------- majandusuuringud
+(defrule (goal gl-saving 0) (can-research ri-double-bit-axe) => (research ri-double-bit-axe))
+(defrule (goal gl-saving 0) (can-research ri-horse-collar) => (research ri-horse-collar))
+(defrule (goal gl-saving 0) (can-research ri-wheel-barrow) => (research ri-wheel-barrow))
+(defrule (goal gl-saving 0) (can-research ri-gold-mining) => (research ri-gold-mining))
+(defrule (goal gl-saving 0) (can-research ri-loom) (current-age >= feudal-age) => (research ri-loom))
+(defrule (goal gl-saving 0) (can-research ri-bow-saw) => (research ri-bow-saw))
+(defrule (goal gl-saving 0) (can-research ri-heavy-plow) => (research ri-heavy-plow))
+(defrule (goal gl-saving 0) (can-research ri-hand-cart) => (research ri-hand-cart))
+
+; ---------------------------------------------------------------- hooned Claude'i sihtarvude jargi
+(defrule
+	(goal gl-more-barracks 1)
+	(up-pending-objects c: barracks < 1)
+	(can-build barracks)
+=>
+	(build barracks))
+
+(defrule
+	(goal gl-more-range 1)
+	(up-pending-objects c: archery-range < 1)
+	(can-build archery-range)
+=>
+	(build archery-range))
+
+(defrule
+	(goal gl-more-stable 1)
+	(up-pending-objects c: stable < 1)
+	(can-build stable)
+=>
+	(build stable))
+
+(defrule
+	(goal gl-more-workshop 1)
+	(up-pending-objects c: siege-workshop < 1)
+	(can-build siege-workshop)
+=>
+	(build siege-workshop))
+
+(defrule
+	(goal gl-more-blacksmith 1)
+	(up-pending-objects c: blacksmith < 1)
+	(can-build blacksmith)
+=>
+	(build blacksmith))
+
+(defrule
+	(goal gl-more-market 1)
+	(up-pending-objects c: market < 1)
+	(can-build market)
+=>
+	(build market))
+
+(defrule
+	(goal gl-more-monastery 1)
+	(up-pending-objects c: monastery < 1)
+	(can-build monastery)
+=>
+	(build monastery))
+
+(defrule
+	(goal gl-more-university 1)
+	(up-pending-objects c: university < 1)
+	(can-build university)
+=>
+	(build university))
+
+(defrule
+	(goal gl-more-castle 1)
+	(up-pending-objects c: castle < 1)
+	(can-build castle)
+=>
+	(build castle))
+
+(defrule
+	(goal gl-more-town-center 1)
+	(up-pending-objects c: town-center < 1)
+	(can-build town-center)
+=>
+	(build town-center))
+
+(defrule
+	(goal gl-more-tower 1)
+	(up-pending-objects c: watch-tower < 1)
+	(can-build watch-tower)
+=>
+	(build watch-tower))
+
+(defrule
+	(goal gl-more-dock 1)
+	(up-pending-objects c: dock < 1)
+	(can-build dock)
+=>
+	(build dock))
+
+; ---------------------------------------------------------------- sojavagi: unit1 ennem, siis unit2
+(defrule (goal gl-train-ok 1) (goal gl-unit1 1) (can-train militiaman-line) => (train militiaman-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 2) (can-train spearman-line) => (train spearman-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 3) (can-train archer-line) => (train archer-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 4) (can-train skirmisher-line) => (train skirmisher-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 5) (can-train knight-line) => (train knight-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 5) (current-age < castle-age) (can-train scout-cavalry-line) => (train scout-cavalry-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 6) (can-train cavalry-archer-line) => (train cavalry-archer-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 7) (unit-type-count-total battering-ram-line < 3) (can-train battering-ram-line) => (train battering-ram-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 7) (can-train mangonel-line) => (train mangonel-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit1 8) (can-train monk) => (train monk))
+
+(defrule (goal gl-train-ok 1) (goal gl-unit2 1) (can-train militiaman-line) => (train militiaman-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 2) (can-train spearman-line) => (train spearman-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 3) (can-train archer-line) => (train archer-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 4) (can-train skirmisher-line) => (train skirmisher-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 5) (can-train knight-line) => (train knight-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 5) (current-age < castle-age) (can-train scout-cavalry-line) => (train scout-cavalry-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 6) (can-train cavalry-archer-line) => (train cavalry-archer-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 7) (unit-type-count-total battering-ram-line < 3) (can-train battering-ram-line) => (train battering-ram-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 7) (can-train mangonel-line) => (train mangonel-line))
+(defrule (goal gl-train-ok 1) (goal gl-unit2 8) (can-train monk) => (train monk))
+
+; ---------------------------------------------------------------- sepikoda ja yksuste uuendused
+(defrule (goal gl-train-ok 1) (can-research ri-forging) => (research ri-forging))
+(defrule (goal gl-train-ok 1) (can-research ri-fletching) => (research ri-fletching))
+(defrule (goal gl-train-ok 1) (can-research ri-scale-mail) => (research ri-scale-mail))
+(defrule (goal gl-train-ok 1) (can-research ri-scale-barding) => (research ri-scale-barding))
+(defrule (goal gl-train-ok 1) (can-research ri-padded-archer-armor) => (research ri-padded-archer-armor))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research ri-iron-casting) => (research ri-iron-casting))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research ri-bodkin-arrow) => (research ri-bodkin-arrow))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research ri-chain-mail) => (research ri-chain-mail))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research ri-chain-barding) => (research ri-chain-barding))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research ri-leather-archer-armor) => (research ri-leather-archer-armor))
+
+(defrule (goal gl-uses-militia 1) (can-research ri-man-at-arms) => (research ri-man-at-arms))
+(defrule (goal gl-uses-militia 1) (can-research ri-long-swordsman) => (research ri-long-swordsman))
+(defrule (goal gl-uses-spear 1) (can-research ri-pikeman) => (research ri-pikeman))
+(defrule (goal gl-uses-archer 1) (can-research ri-crossbow) => (research ri-crossbow))
+(defrule (goal gl-uses-archer 1) (can-research ri-arbalest) => (research ri-arbalest))
+(defrule (goal gl-uses-skirm 1) (can-research ri-elite-skirmisher) => (research ri-elite-skirmisher))
+(defrule (goal gl-uses-knight 1) (can-research ri-bloodlines) => (research ri-bloodlines))
+(defrule (goal gl-uses-knight 1) (can-research ri-light-cavalry) => (research ri-light-cavalry))
+(defrule (goal gl-uses-knight 1) (can-research ri-cavalier) => (research ri-cavalier))
+(defrule (goal gl-uses-cavarcher 1) (can-research ri-thumb-ring) => (research ri-thumb-ring))
+(defrule (goal gl-uses-cavarcher 1) (can-research ri-heavy-cavalry-archer) => (research ri-heavy-cavalry-archer))
+(defrule (goal gl-uses-siege 1) (can-research ri-capped-ram) => (research ri-capped-ram))
+(defrule (goal gl-uses-siege 1) (can-research ri-onager) => (research ri-onager))
+(defrule (goal gl-uses-archer 1) (can-research ri-ballistics) => (research ri-ballistics))
