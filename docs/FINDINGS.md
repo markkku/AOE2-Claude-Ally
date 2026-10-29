@@ -58,6 +58,9 @@ the same mechanism (`ai/Promisory/scoutcontrol.per` → `xs/ailib/Geometry.xs`).
   Global XS variables are separate for each AI player.
 - Verified: a value written by Python reached a `.per` rule and was printed with `up-chat-data-to-all`.
 - Gotcha: the AI command is `enable-timer`, not `enable-timers` (error 2005 "invalid identifier").
+- Gotcha: the game's XS parser rejects arithmetic on the right side of a comparison, e.g.
+  `if (xsGetFileSize() < n * 4 + 4)` → error 0308 "illogical or invalid expression" (the `xs-check` linter accepts it).
+  Compute the value into a variable first.
 
 ## 5. Player chat can be read from the replay file
 
