@@ -93,3 +93,11 @@ Every decision (prompt, answer, latency) is logged to `logs/game-*.jsonl`.
 - **AI script error on game start** → note the file and line number and open an issue.
 - **Claude never acts** → check that the ally's AI is `ClaudeAI` and that it is on your team.
 - **`'claude' command not found`** → install Claude Code and run `claude` once to log in.
+
+## License
+
+[MIT](LICENSE) © 2026 Markku Kalam.
+
+Age of Empires II: Definitive Edition is a trademark of Microsoft. This is an unofficial fan project, not affiliated
+with or endorsed by Microsoft or Anthropic. `install.py` creates the `Claude_<map>` copies from your own game files;
+no game files are distributed with this repository.
