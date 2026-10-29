@@ -1,12 +1,12 @@
-// claude_ai.xs - Claude'i kasud AI-le (laaditakse ClaudeAI.per-is: (include "claude_ai.xs")).
+// claude_ai.xs - carries out Claude's commands for the AI player (loaded by ClaudeAI.per: (include "claude_ai.xs")).
 //
-// ClaudeAI.per kutsub:
-//   (xs-script-call "claudeAiPoll") ~3 s tagant: loeb claude_cmd.xsdat, seab kasu-goal'id
-//                                    ja arvutab .per-ile lihtsad lipud (kas teha kyla, kas koguda ajastuks jne)
-//   (xs-script-call "claudeAiArmy") ~8 s tagant: liigutab armeed vastavalt reziimile
-// XS-i reegleid (rule) siin ei kasutata, sest need ei jookse AI-mangija kontekstis.
+// ClaudeAI.per calls:
+//   (xs-script-call "claudeAiPoll") every ~3 s: reads claude_cmd.xsdat, stores the command in goals
+//                                    and computes simple flags for the .per (train villagers? save for age-up? ...)
+//   (xs-script-call "claudeAiArmy") every ~8 s: moves the army according to the current mode
+// No XS rules are used here, because rules do not run in the AI player's context.
 //
-// Goal'id - PEAVAD klappima ClaudeAI.per defconst'idega.
+// Goal numbers MUST match the defconsts in ClaudeAI.per.
 
 const int cAiMagic = 20261029;
 const int cAiVersion = 2;
@@ -25,15 +25,15 @@ const int cGoalWantVil = 111;
 const int cGoalUnderAttack = 112;
 const int cGoalTrainOk = 113;
 const int cGoalSaving = 114;
-// 121..128: kas yksusetyyp 1..8 on valitud (unit1 voi unit2)
+// 121..128: whether unit type 1..8 is selected (as unit1 or unit2)
 const int cGoalUsesBase = 120;
-// 141..152: Claude'i hoonete sihtarvud; 161..172: 1, kui sellest hoonest on veel puudu.
-// Jarjekord (sama mis general.py BUILDINGS): kasarmud, laskevali, tall, piiramistookoda, sepikoda,
-// turg, klooster, ylikool, loss, linnakeskus, torn, sadam
+// 141..152: Claude's building targets; 161..172: 1 when more of that building is still needed.
+// Order (same as BUILDINGS in claude_ally.py): barracks, archery range, stable, siege workshop, blacksmith,
+// market, monastery, university, castle, town center, tower, dock
 const int cGoalBuildTargetBase = 141;
 const int cGoalBuildMoreBase = 161;
 
-// yksuste valikud (sama mis general.py UNITS)
+// unit choices (same as UNITS in claude_ally.py)
 const int cUnitMilitia = 1;
 const int cUnitSpear = 2;
 const int cUnitArcher = 3;
@@ -43,12 +43,12 @@ const int cUnitCavArcher = 6;
 const int cUnitSiege = 7;
 const int cUnitMonk = 8;
 
-// reziimid
+// modes
 const int cModeDefend = 0;
 const int cModeAttack = 1;
 const int cModeHelp = 2;
 
-// objektide ID-d
+// object and tech IDs
 const int cIdTownCenter = 109;
 const int cTechFeudal = 101;
 const int cTechCastle = 102;
@@ -64,7 +64,7 @@ int gAiLastMode = -1;
 int gAiLastTarget = -1;
 int gAiBuildRead = -1;
 
-// Hoone k (0..11) objekti- voi klassi-ID loendamiseks.
+// Object or class ID used to count building k (0..11).
 int aiBuildingId(int k = 0) {
     if (k == 0) { return (12); }
     if (k == 1) { return (87); }
@@ -81,7 +81,7 @@ int aiBuildingId(int k = 0) {
 }
 
 void claudeAiInit() {
-    xsChatData("[Claude AI] valmis, mangija %d", xsGetGoal(cGoalMyPlayer));
+    xsChatData("[Claude AI] ready, player %d", xsGetGoal(cGoalMyPlayer));
 }
 
 bool aiUses(int unit = 0) {
@@ -109,7 +109,7 @@ void aiReadCommand() {
     if (gAiReportedOpen == false) {
         gAiReportedOpen = true;
         if (needContext) {
-            xsChatData("[Claude AI] kasufail avanes parast xsSetContextPlayer");
+            xsChatData("[Claude AI] command file opened only after xsSetContextPlayer");
         }
     }
     int magic = 0;
@@ -147,7 +147,7 @@ void aiReadCommand() {
     if (magic != cAiMagic || version != cAiVersion || seq == gAiLastSeq) {
         return;
     }
-    // kask on moeldud ainult Claude'i mangijale
+    // the command is meant only for Claude's player
     if (claude != xsGetGoal(cGoalMyPlayer)) {
         return;
     }
@@ -165,7 +165,7 @@ void aiReadCommand() {
     xsSetGoal(cGoalCmdNew, 1);
 }
 
-// Kas tasub ajastu jaoks ressursse koguda (sojavae tootmine pausile).
+// Whether to save resources for the next age (military production paused).
 bool aiSaving(int me = 0, int age = 0, int vil = 0) {
     if (xsGetGoal(cGoalAgeUp) != 1 || age >= 3) {
         return (false);
@@ -204,7 +204,7 @@ void aiUpdateFlags() {
         xsSetGoal(cGoalUsesBase + u, aiBool(aiUses(u)));
     }
 
-    // hooned: ehita juurde, kuni Claude'i sihtarv on taidetud (arvestab ka ehitamisel olevaid)
+    // buildings: keep building until Claude's target is met (counts ones under construction too)
     for (k = 0; < cAiBuildingCount) {
         int have = xsGetObjectCountTotal(me, aiBuildingId(k));
         xsSetGoal(cGoalBuildMoreBase + k, aiBool(have < xsGetGoal(cGoalBuildTargetBase + k)));
@@ -216,7 +216,7 @@ void claudeAiPoll() {
     aiUpdateFlags();
 }
 
-// --- Armee -------------------------------------------------------------------
+// --- Army ---------------------------------------------------------------------
 
 void aiAddClass(int me = 0, int classId = 0) {
     gAiIds = xsGetPlayerUnitIds(me, classId, gAiIds);
@@ -249,7 +249,7 @@ void aiCollectArmy(int me = 0) {
     aiAddClass(me, cSiegeWeaponClass);
     aiAddClass(me, cUnpackedSiegeUnitClass);
     aiAddClass(me, cScorpionClass);
-    // skaut jaab luurama, kui teda pole valitud pohiyksuseks
+    // the scout keeps exploring unless cavalry is one of the chosen units
     if (aiUses(cUnitKnight)) {
         aiAddClass(me, cScoutCavalryClass);
     }
@@ -258,7 +258,7 @@ void aiCollectArmy(int me = 0) {
     }
 }
 
-// Mangija p objekt/klass, mis on punktile koige lahemal. Kui pole, tagastab false.
+// Player p's object/class nearest to a point (stored in gAiFound). Returns false if there is none.
 vector gAiFound = vector(0, 0, 0);
 
 bool aiFindNearest(int p = 0, int objectOrClass = 0, vector from = vector(0, 0, 0)) {
@@ -297,7 +297,7 @@ void claudeAiArmy() {
 
     vector dest = home;
     if (mode == cModeAttack && target > 0) {
-        // lahim vaenlase hoone meie linnakeskusest
+        // the enemy building nearest to our town center
         if (aiFindNearest(target, cBuildingClass, home) == false) {
             return;
         }
@@ -310,7 +310,7 @@ void claudeAiArmy() {
         dest = gAiFound;
     }
 
-    // kaitses saadame koju ainult kaugele jaanud yksused
+    // when defending, only units that wandered far away are sent home
     if (gAiSend < 0) {
         gAiSend = xsArrayCreateInt(gAiArmyCount, -1, "");
     }
@@ -333,7 +333,7 @@ void claudeAiArmy() {
     if (mode != gAiLastMode || target != gAiLastTarget) {
         gAiLastMode = mode;
         gAiLastTarget = target;
-        xsChatData("[Claude AI] reziim (0 kaitse, 1 rynnak, 2 abi): %d", mode);
-        xsChatData("[Claude AI] siht-mangija: %d", target);
+        xsChatData("[Claude AI] mode (0 defend, 1 attack, 2 help): %d", mode);
+        xsChatData("[Claude AI] target player: %d", target);
     }
 }

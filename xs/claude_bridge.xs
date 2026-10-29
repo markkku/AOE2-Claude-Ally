@@ -1,15 +1,15 @@
-// claude_bridge.xs - kaardi XS (lisatakse RMS-iga: #includeXS claude_bridge.xs).
+// claude_bridge.xs - map-side XS (added to a random map script with: #includeXS claude_bridge.xs).
 //
-// 1) Iga 5 mangusekundi jarel kirjutab seisufaili <kaardinimi>.xsdat:
+// 1) Every 5 game seconds writes the state file <map name>.xsdat:
 //      int magic, int version, int counter, int gameTime, int lastCmdSeq, int claudePlayer,
-//      int localPlayer, 8 x string (mangija 1..8 info "k=v;k=v;", tyhi kui mangijat pole)
-//    Tiimikaaslaste (Claude + liitlased) kohta: ressursid, populatsioon, armee, oht.
-//    Vaenlaste kohta: ajastu ja AINULT kohaliku mangija (sinu) nahtavad yksused.
-// 2) Iga 2 mangusekundi jarel loeb claude_cmd.xsdat ja kui seq on uus, naitab
-//    Claude'i sonumi chatis. Kasu ise taidab AI (claude_ai.xs + ClaudeAI.per).
+//      int localPlayer, 8 x string (info for players 1..8 as "k=v;k=v;", empty if no such player)
+//    Teammates (Claude + allies): resources, population, army, buildings, threat near town centers.
+//    Enemies: age and ONLY the units currently visible to the local (human) player.
+// 2) Every 2 game seconds reads claude_cmd.xsdat and, when seq is new, shows Claude's message
+//    in chat. The command itself is carried out by the AI (claude_ai.xs + ClaudeAI.per).
 //
-// claude_cmd.xsdat (versioon 2): int magic, int version, int seq, int claudePlayer, int unit1, int unit2,
-//                   int mode, int target, int ageUp, int vilTarget, 12 x int hoonete sihtarvud, string message
+// claude_cmd.xsdat (version 2): int magic, int version, int seq, int claudePlayer, int unit1, int unit2,
+//                   int mode, int target, int ageUp, int vilTarget, 12 x int building targets, string message
 
 const int cBrMagic = 20261029;
 const int cBrVersion = 1;
@@ -60,7 +60,7 @@ int brShip(int p = 0) {
     return (brCount(p, cWarshipClass) + brCount(p, cBoardingShipClass));
 }
 
-// Loeb mangija p klassi c nahtavad yksused; sojavae positsioonid lahevad ohu arvutusse.
+// Counts player p's visible units of class c; military positions are stored for the threat calculation.
 int brVisible(int p = 0, int c = 0, bool military = true) {
     gBrIds = xsGetPlayerUnitIds(p, c, gBrIds);
     int n = xsArrayGetSize(gBrIds);
@@ -78,7 +78,7 @@ int brVisible(int p = 0, int c = 0, bool military = true) {
     return (seen);
 }
 
-// Mitu nahtavat vaenlase sojavae yksust on mangija p linnakeskuste lahedal.
+// How many visible enemy military units are near player p's town centers.
 int brThreat(int p = 0) {
     gBrTcIds = xsGetPlayerUnitIds(p, cBrTownCenter, gBrTcIds);
     int nTc = xsArrayGetSize(gBrTcIds);
@@ -121,7 +121,7 @@ string brTeamInfo(int p = 0) {
     s = s + ";inf=" + brInf(p) + ";arch=" + brArch(p) + ";cav=" + brCav(p) + ";cavarch=" + brCavArch(p);
     s = s + ";siege=" + brSiege(p) + ";monk=" + brMonk(p) + ";ship=" + brShip(p);
     s = s + ";tc=" + brCount(p, cBrTownCenter) + ";castle=" + brCount(p, cBrCastle) + ";kills=" + kills;
-    // hooned (koos ehitamisel olevatega)
+    // buildings (including ones under construction)
     s = s + ";b_barracks=" + xsGetObjectCountTotal(p, 12) + ";b_range=" + xsGetObjectCountTotal(p, 87);
     s = s + ";b_stable=" + xsGetObjectCountTotal(p, 101) + ";b_workshop=" + xsGetObjectCountTotal(p, 49);
     s = s + ";b_blacksmith=" + xsGetObjectCountTotal(p, 103) + ";b_market=" + xsGetObjectCountTotal(p, 84);
@@ -156,7 +156,7 @@ void brWriteState() {
     }
     gBrPosCount = 0;
 
-    // vaenlased enne, et nende positsioonid oleksid ohu arvutuseks olemas
+    // enemies first, so their positions are known for the threat calculation
     string info1 = "";
     string info2 = "";
     string info3 = "";
@@ -224,7 +224,7 @@ void brReadCommand() {
     int version = xsReadInt();
     int seq = xsReadInt();
     int claude = xsReadInt();
-    // ylejaanud taisarvud (yksused, reziim, hooned) kasutab AI
+    // the remaining ints (units, mode, buildings) are used by the AI
     xsSetFilePosition(cBrCmdInts * 4);
     string msg = xsReadString();
     xsCloseFile();
@@ -255,5 +255,5 @@ rule brCommandTick
 }
 
 void main() {
-    xsChatData("[Claude] sild aktiivne");
+    xsChatData("[Claude] bridge active");
 }

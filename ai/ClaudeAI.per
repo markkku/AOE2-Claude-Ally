@@ -1,10 +1,10 @@
-; ClaudeAI.per - Claude'i tiimikaaslane, v1.
-; Majapidamine (kyla, majad, farmid, laod, veski) ja tootmine on siin. Strateegilised otsused
-; (mida toota, mida ja mitu hoonet ehitada, millal rynnata, kellele appi minna, ajastud) tulevad Claude'ilt:
-;   Python -> claude_cmd.xsdat -> (xs-script-call "claudeAiPoll") -> goal'id -> need reeglid
-; Armee liigutamine: (xs-script-call "claudeAiArmy") (vt claude_ai.xs).
+; ClaudeAI.per - the AI player that Claude commands.
+; Housekeeping (villagers, houses, farms, drop sites, mill) and production live here. Strategic decisions
+; (what to train, which buildings and how many, when to attack, whom to help, aging up) come from Claude:
+;   claude_ally.py -> claude_cmd.xsdat -> (xs-script-call "claudeAiPoll") -> goals -> these rules
+; Army movement: (xs-script-call "claudeAiArmy") (see claude_ai.xs).
 ;
-; Goal'id PEAVAD klappima claude_ai.xs konstantidega.
+; Goal numbers MUST match the constants in claude_ai.xs.
 
 (defconst gl-my-player 101)
 (defconst gl-seq 102)
@@ -27,7 +27,7 @@
 (defconst gl-uses-cavarcher 126)
 (defconst gl-uses-siege 127)
 (defconst gl-uses-monk 128)
-; 141..152 Claude'i hoonete sihtarvud, 161..172 "veel puudu" lipud (arvutab claude_ai.xs)
+; 141..152 Claude's building targets, 161..172 "more needed" flags (computed by claude_ai.xs)
 (defconst gl-target-barracks 141)
 (defconst gl-more-barracks 161)
 (defconst gl-more-range 162)
@@ -45,10 +45,10 @@
 (defconst t-poll 1)
 (defconst t-army 2)
 
-; include peab olema parast koiki load-kaske (siin neid pole)
+; include must come after all load commands (there are none here)
 (include "claude_ai.xs")
 
-; ---------------------------------------------------------------- algus
+; ---------------------------------------------------------------- start
 (defrule
 	(true)
 =>
@@ -75,11 +75,13 @@
 	(set-strategic-number sn-enable-boar-hunting 0)
 	(set-strategic-number sn-enable-training-queue 1)
 	(xs-script-call "claudeAiInit")
+	; recorded in the game's replay file; claude_ally.py uses it to detect which player is ClaudeAI
+	(up-chat-data-to-all "ClaudeAI ready, player %d" g: gl-my-player)
 	(enable-timer t-poll 3)
 	(enable-timer t-army 8)
 	(disable-self))
 
-; ---------------------------------------------------------------- Claude'i sild
+; ---------------------------------------------------------------- bridge to Claude
 (defrule
 	(true)
 =>
@@ -109,7 +111,7 @@
 =>
 	(set-goal gl-cmd-new 0))
 
-; ---------------------------------------------------------------- kogujad ajastu jargi
+; ---------------------------------------------------------------- gatherer split per age
 (defrule
 	(current-age == dark-age)
 =>
@@ -134,7 +136,7 @@
 	(set-strategic-number sn-gold-gatherer-percentage 27)
 	(set-strategic-number sn-stone-gatherer-percentage 5))
 
-; ---------------------------------------------------------------- kylaelanikud ja majad
+; ---------------------------------------------------------------- villagers and houses
 (defrule
 	(goal gl-want-vil 1)
 	(can-train villager)
@@ -158,7 +160,7 @@
 =>
 	(build house))
 
-; ---------------------------------------------------------------- ladestuskohad ja farmid
+; ---------------------------------------------------------------- drop sites and farms
 (defrule
 	(building-type-count-total lumber-camp < 1)
 	(resource-found wood)
@@ -210,7 +212,7 @@
 =>
 	(build farm))
 
-; ---------------------------------------------------------------- ajastud ja nende eeltingimused
+; ---------------------------------------------------------------- aging up
 (defrule
 	(goal gl-ageup 1)
 	(can-research feudal-age)
@@ -229,7 +231,7 @@
 =>
 	(research imperial-age))
 
-; ---------------------------------------------------------------- majandusuuringud
+; ---------------------------------------------------------------- economy research
 (defrule (goal gl-saving 0) (can-research ri-double-bit-axe) => (research ri-double-bit-axe))
 (defrule (goal gl-saving 0) (can-research ri-horse-collar) => (research ri-horse-collar))
 (defrule (goal gl-saving 0) (can-research ri-wheel-barrow) => (research ri-wheel-barrow))
@@ -239,7 +241,7 @@
 (defrule (goal gl-saving 0) (can-research ri-heavy-plow) => (research ri-heavy-plow))
 (defrule (goal gl-saving 0) (can-research ri-hand-cart) => (research ri-hand-cart))
 
-; ---------------------------------------------------------------- hooned Claude'i sihtarvude jargi
+; ---------------------------------------------------------------- buildings by Claude's targets
 (defrule
 	(goal gl-more-barracks 1)
 	(up-pending-objects c: barracks < 1)
@@ -324,7 +326,7 @@
 =>
 	(build dock))
 
-; ---------------------------------------------------------------- sojavagi: unit1 ennem, siis unit2
+; ---------------------------------------------------------------- military: unit1 first, then unit2
 (defrule (goal gl-train-ok 1) (goal gl-unit1 1) (can-train militiaman-line) => (train militiaman-line))
 (defrule (goal gl-train-ok 1) (goal gl-unit1 2) (can-train spearman-line) => (train spearman-line))
 (defrule (goal gl-train-ok 1) (goal gl-unit1 3) (can-train archer-line) => (train archer-line))
@@ -347,7 +349,7 @@
 (defrule (goal gl-train-ok 1) (goal gl-unit2 7) (can-train mangonel-line) => (train mangonel-line))
 (defrule (goal gl-train-ok 1) (goal gl-unit2 8) (can-train monk) => (train monk))
 
-; ---------------------------------------------------------------- sepikoda ja yksuste uuendused
+; ---------------------------------------------------------------- blacksmith and unit upgrades
 (defrule (goal gl-train-ok 1) (can-research ri-forging) => (research ri-forging))
 (defrule (goal gl-train-ok 1) (can-research ri-fletching) => (research ri-fletching))
 (defrule (goal gl-train-ok 1) (can-research ri-scale-mail) => (research ri-scale-mail))

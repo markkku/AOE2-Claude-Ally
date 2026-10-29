@@ -1,106 +1,95 @@
-# AOE2-Claude-Ally – AoE II DE ↔ Claude sild
+# AOE2-Claude-Ally
 
-## v1 – Claude kui tiimikaaslane
+**Play Age of Empires II: Definitive Edition with Claude as your teammate.**
 
-| Fail | Roll |
-|---|---|
-| `claude_bridge.xs` | kaardi XS (kaardil `ClaudeGeneral`): iga 5 s kirjutab seisu `ClaudeGeneral.xsdat`, näitab Claude'i sõnumeid chatis |
-| `ClaudeAI.per` + `claude_ai.xs` | AI-mängija: majandus, ajastud, tootmine; täidab Claude'i käske, liigutab armeed |
-| `general.py` | loeb seisu ja sinu chati (salvestusfailist), küsib `claude -p`, kirjutab `claude_cmd.xsdat` |
-| `logs/*.jsonl` | iga otsus koos prompti, vastuse ja latentsusega |
+Claude commands an allied computer player. It reads the game state, decides what to build and train,
+when to age up, when to attack and when to come to your rescue, and talks to you in the in-game chat.
+You can talk back: type in the normal game chat ("help me!", "attack blue", "what should I build?")
+and Claude answers within seconds, in your language.
 
-**Käivitamine**
-1. `python3 bridge_test.py install`, kui XS/AI/RMS-faile on muudetud.
-2. `python3 general.py` (valikud: `--model haiku|sonnet|opus`, `--interval 45`, `--ascii`).
-3. Mängus: **Skirmish** → kaart **Custom → ClaudeGeneral** → sina on mängija 1, **mängija 2 = ClaudeAI samas tiimis** (Team 1), vaenlased tavalised AI-d teises tiimis.
-4. Räägi Claude'iga **mängu chatis** (Enter, kirjuta, Enter) või terminalis.
+```
+  game ──(XS writes state)──► <map>.xsdat ──► claude_ally.py ──► claude -p ──► decision
+   ▲                                              │
+   │                                  replay file (your chat)
+   └──(AI script + XS carry it out)── claude_cmd.xsdat ◄──┘
+```
 
-**Mida Claude otsustab:** põhi- ja tugiüksus (8 valikut), režiim (kaitse / rünnak mängijale X / abi liitlasele X), kas minna järgmisse ajastusse, külaelanike arv, **hoonete sihtarvud** (kasarmud, laskeväli, tall, piiramistöökoda, sepikoda, turg, klooster, ülikool, loss, linnakeskus, torn, sadam) ja sõnum chatti.
-**Mida AI teeb ise:** majad, farmid, veski, puidu- ja kaevanduslaod, külaelanike tootmine, majandusuuringud, valitud üksuste tootmine ja uuendused.
-**Millal küsitakse:** iga 45 s järel; kohe, kui kirjutad; kohe, kui tiimikaaslase linnakeskuse juures on ≥3 nähtavat vaenlase sõdurit.
-**Mida Claude näeb:** tiimi ressursid ja armee, vaenlastest ainult see, mis on sulle praegu nähtav.
+- **Claude decides:** main and support unit, building targets (barracks, ranges, stables, siege workshop,
+  blacksmith, market, monastery, university, castle, town centers, towers, docks), aging up, villager count,
+  mode (defend / attack player X / help ally X), and what to say in chat.
+- **The AI script does the rest:** villagers, houses, farms, mill, lumber and mining camps, eco upgrades,
+  training the chosen units and their upgrades, moving the army.
+- **Fair play:** Claude only sees your team's data and the enemy units that are currently visible to you.
 
----
+## Requirements
 
-# 1. faasi test
+- Age of Empires II: Definitive Edition on **Steam**, on Windows or on Linux (Proton).
+- **Python 3.9+** (standard library only).
+- **[Claude Code](https://claude.com/claude-code)** installed and logged in, so that the `claude` command works.
+  Each decision is one `claude -p` call on your Claude plan (roughly 50–80 calls in a 40-minute game).
+- Single player only (you + Claude vs computer AIs). Multiplayer and ranked are not supported.
 
-Eesmärk: tõestada, et XS-skript ja väline Python-programm saavad mängu ajal `.xsdat` failide kaudu suhelda mõlemas suunas.
+## Install
 
-| Fail | Mis see on |
-|---|---|
-| `bridge_test.xs` | XS: iga 5 s kirjutab seisufaili (mänguaeg + loendur) ja loeb `claude_cmd.xsdat`-ist täisarvu chatti |
-| `bridge_test.py` | Python: `install` (paigaldab XS + RMS), `run` (jälgib seisu, kirjutab käske), `dump` (hex-dump) |
-| `LEIUD.md` | Tulemused ja avatud küsimused |
-
-## 0. Ühekordne ettevalmistus
-
-1. **Käivita mäng Steamist üks kord peamenüüni** ja sulge. Alles siis tekib kasutajakaust
-   `~/.local/share/Steam/steamapps/compatdata/813780/pfx/drive_c/users/steamuser/Games/Age of Empires 2 DE/<steamId>/`
-   (Windowsis `C:\Users\<user>\Games\Age of Empires 2 DE\<steamId>\`). Praegu seda kausta veel pole.
-2. Paigalda skriptid:
-   ```bash
-   cd ~/Claude/AOE2
-   python3 bridge_test.py install
+1. Start the game once and go to the main menu (this creates your profile folder), then quit.
+2. Download this repository and run:
    ```
-   See kopeerib `bridge_test.xs` → `<steamId>/resources/_common/xs/` ja loob
-   `<steamId>/resources/_common/random-map-scripts/ClaudeBridge.rms` (sinu Arabia koopia, mille 1. real on `#includeXS bridge_test.xs`).
-   Mängu enda faile ei muudeta.
+   python install.py
+   ```
+   It finds the game automatically (any Steam library, Windows or Proton) and copies into your user profile:
+   two XS scripts, the `ClaudeAI` AI script and a `Claude_<map>` copy of every built-in random map (174 maps).
+   The game's own files are never changed. `python install.py --uninstall` removes everything again.
 
-## 1. Test A – stsenaariumiredaktor (kõige lihtsam, alusta sellest)
+## Play
 
-1. Terminalis: `python3 bridge_test.py run` ja jäta see jooksma.
-2. Mängus: **Editors → Create Scenario** (vaikeseaded sobivad).
-3. Ava vahekaart **Map**, leia väli **Script Filename** (või sarnane) ja kirjuta `bridge_test` (ilma `.xs`-ita).
-4. Vajuta **Test** (vasak ülanurk). Kui küsitakse, salvesta stsenaarium (nt `bridgetest`).
-5. Oota 10–20 s ja vaata chatti.
+1. Start the bridge and leave it running:
+   ```
+   python claude_ally.py
+   ```
+2. In the game: **Single Player → Skirmish**
+   - Map Style **Custom**, pick any **`Claude_<map>`** (e.g. `Claude_Arabia`, `Claude_Black_Forest`).
+   - Put a computer player on **your team** and set its AI to **`ClaudeAI`**.
+   - Add enemies on the other team (any normal AI).
+3. Start. Within a few seconds the chat shows `[Claude] bridge active` and Claude's first message.
+4. Talk to Claude in the game chat (or type into the terminal where `claude_ally.py` runs).
 
-## 2. Test B – juhuslik kaart AI vastu (lõpliku lahenduse kuju)
+### Options
 
-1. `python3 bridge_test.py run` jookseb.
-2. **Single Player → Skirmish**, kaardi tüüp **Custom**, kaart **ClaudeBridge**. Lisa 1 AI. Start.
-3. Vaata chatti.
+| Option | Default | |
+|---|---|---|
+| `--lang Estonian` | `auto` | language of Claude's chat messages (`auto` = the language you write in) |
+| `--model haiku\|sonnet\|opus` | `sonnet` | Claude model |
+| `--interval 45` | `45` | seconds between regular decisions; Claude also decides immediately when you write or a teammate is attacked |
+| `--threat 3` | `3` | enemy soldiers near a teammate's town center that trigger an immediate decision |
+| `--ascii` | off | strip accents from Claude's messages, if the game chat shows them wrong |
+| `--claude-player N`, `--human N` | auto | override player detection |
+| `--user-dir`, `--game-dir` (install.py) | auto | override folder detection |
 
-## 3. Test C – AI loeb käske (`ClaudeAI.per` + `claude_ai.xs`)
+Every decision (prompt, answer, latency) is logged to `logs/game-*.jsonl`.
 
-Sama seadistus mis Test B, aga AI mängijaks vali **ClaudeAI** (sama tiim sinuga või eraldi, pole oluline).
-Ahel: Python → `claude_cmd.xsdat` → `.per` kutsub iga 3 s `(xs-script-call "claudeAiPoll")` → XS seab goal'id 102/103 → `.per` reegel kirjutab chatti.
+## How it works
 
-| Chatt | Tähendus |
+| File | Role |
 |---|---|
-| `[AI per] ClaudeAI laaditud, mangija N` | AI-skript laaditi |
-| `[AI xs] claude_ai.xs laaditud, context player=N` | `include` töötas, XS on AI-le kättesaadav |
-| `[AI xs] claude_cmd avanes otse` / `alles parast xsSetContextPlayer` | kas faili lugemiseks on vaja konteksti vahetada |
-| `AI (.per) sai kasu: N` (N kasvab) | ✅ **kogu ahel töötab** |
-| `[AI per] …` on, aga `[AI xs] …` pole | `include` ei leidnud faili profiili `xs/` kaustast |
+| `xs/claude_bridge.xs` | Map-side XS, included by every `Claude_<map>`. Every 5 game seconds writes the state (`<map>.xsdat`); shows Claude's messages in chat. |
+| `ai/ClaudeAI.per` | The AI player: economy, aging up, production, building Claude's building targets. |
+| `xs/claude_ai.xs` | Loaded by the AI. Reads `claude_cmd.xsdat`, turns it into AI goals, moves the army. |
+| `claude_ally.py` | Reads the state and your chat (from the replay file the game writes), asks Claude, writes `claude_cmd.xsdat`. |
+| `install.py` | Installs / uninstalls the files above. |
+| `aoe2common.py` | Folder detection (Windows / Proton, all Steam libraries) and `.xsdat` helpers. |
+| `tools/bridge_test.*` | Minimal bridge test (scenario editor). |
+| `docs/FINDINGS.md` | How it was figured out: `.xsdat` format, file locations, XS ↔ AI script communication, replay chat. |
 
-## Mida chatis peaks nägema
+## Limitations
 
-| Chatt | Tähendus |
-|---|---|
-| `[bridge] bridge_test.xs laaditud` | XS laaditi (`main()` jooksis) |
-| `[bridge] t=5 kirjutatud=1 claude_cmd: AVAMINE EBAONNESTUS` | XS töötab, aga ei leia käsufaili (Python pole veel õigesse kausta kirjutanud – peaks 5–10 s jooksul paranema) |
-| `Claude utleb: 1`, `Claude utleb: 2`, … | ✅ **Test läbitud** – mäng loeb faili korduvalt kettalt |
-| `[bridge] ... sama seq=N (Python pole vahepeal uut kasku kirjutanud)` | normaalne, kui see vaheldub `Claude utleb` ridadega (XS loeb mänguaja järgi, kiirusel 1,7× ~3 s tagant). ❌ Viga on ainult siis, kui N **ei kasva**, kuigi Python kirjutab uusi numbreid |
-| `[bridge] xsCreateFile EBAONNESTUS` | seisufaili kirjutamine ei õnnestu |
-| Mitte midagi | XS-i ei laaditud (vale skriptinimi / fail vales kaustas / süntaksiviga – vaata ka ekraanil XS-i veateadet) |
+- Water maps: the AI does not build a navy or cross water to attack.
+- Only random maps from Skirmish (no scenarios or campaigns).
+- When attacking, the army walks to the nearest enemy building even if it has not been scouted yet.
+- Accented characters in Claude's messages have not been verified on every setup; use `--ascii` if they look wrong.
 
-Terminalis peaks `run` näitama:
-```
-=== Uus .xsdat: .../<steamId>/profile/default0.xsdat (26 baiti)   <- hex-dump
-*** XS kirjutab kausta: ...
-[21:33:02] default0.xsdat: manguaeg=15 s  loendur=3 ...
-[21:33:05] kask seq=2 vaartus=2 -> .../claude_cmd.xsdat
-```
+## Troubleshooting
 
-Kuni Python pole näinud ühtegi XS-i kirjutatud faili, kirjutab ta `claude_cmd.xsdat` igaks juhuks mitmesse kohta
-(`<steamId>/profile`, `<steamId>/resources/_common/xs`, `<steamId>`). Kui seisufail ilmub, kirjutab ta ainult sinna kausta.
-Kui seisufaili üldse ei leita, proovi `python3 bridge_test.py run --scan-install` ja otsi käsitsi:
-```bash
-find ~/.local/share/Steam/steamapps -name "*.xsdat"
-```
-
-## Mida mulle tagasi öelda
-
-1. Chatiread (kasvõi paar esimest ja paar viimast).
-2. Terminali väljund `run`-ist (eriti hex-dump ja „XS kirjutab kausta“ rida).
-3. Kumb test (A/B) ja kas XS-i laadimisel tuli veateade.
+- **`claude_ally.py` keeps "Waiting for a game"** → the map must be one of the `Claude_<map>` maps.
+- **AI script error on game start** → note the file and line number and open an issue.
+- **Claude never acts** → check that the ally's AI is `ClaudeAI` and that it is on your team.
+- **`'claude' command not found`** → install Claude Code and run `claude` once to log in.
