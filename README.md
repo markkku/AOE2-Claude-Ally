@@ -96,7 +96,7 @@ Every decision (prompt, answer, latency) is logged to `logs/game-*.jsonl`.
 
 ## License
 
-[MIT](LICENSE) © 2026 Markku Kalam.
+[MIT](LICENSE) © 2026 [markkku](https://github.com/markkku).
 
 Age of Empires II: Definitive Edition is a trademark of Microsoft. This is an unofficial fan project, not affiliated
 with or endorsed by Microsoft or Anthropic. `install.py` creates the `Claude_<map>` copies from your own game files;
