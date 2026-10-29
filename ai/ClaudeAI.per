@@ -19,6 +19,10 @@
 (defconst gl-under-attack 112)
 (defconst gl-train-ok 113)
 (defconst gl-saving 114)
+(defconst gl-walls 115)
+(defconst gl-wall-ring 116)
+(defconst gl-build-at 117)
+(defconst gl-build-near 118)
 (defconst gl-uses-militia 121)
 (defconst gl-uses-spear 122)
 (defconst gl-uses-archer 123)
@@ -27,6 +31,7 @@
 (defconst gl-uses-cavarcher 126)
 (defconst gl-uses-siege 127)
 (defconst gl-uses-monk 128)
+(defconst gl-uses-unique 129)
 ; 141..152 Claude's building targets, 161..172 "more needed" flags (computed by claude_ai.xs)
 (defconst gl-target-barracks 141)
 (defconst gl-more-barracks 161)
@@ -62,6 +67,11 @@
 	(set-goal gl-want-vil 1)
 	(set-goal gl-train-ok 1)
 	(set-goal gl-target-barracks 1)
+	(set-goal gl-walls 0)
+	(set-goal gl-wall-ring 2)
+	(set-goal gl-build-at 0)
+	(enable-wall-placement 1)
+	(enable-wall-placement 2)
 	(set-strategic-number sn-percent-civilian-explorers 0)
 	(set-strategic-number sn-cap-civilian-explorers 0)
 	(set-strategic-number sn-total-number-explorers 1)
@@ -241,90 +251,243 @@
 (defrule (goal gl-saving 0) (can-research ri-heavy-plow) => (research ri-heavy-plow))
 (defrule (goal gl-saving 0) (can-research ri-hand-cart) => (research ri-hand-cart))
 
+; ---------------------------------------------------------------- where new buildings go
+; gl-build-at: 0 = own town (normal placement), 1 = near player gl-build-near's town center, 2 = towards the enemy.
+; up-set-placement-data only accepts literal player numbers, hence one rule per player.
+(defrule (goal gl-build-at 1) (goal gl-build-near 1) => (up-set-placement-data 1 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 2) => (up-set-placement-data 2 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 3) => (up-set-placement-data 3 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 4) => (up-set-placement-data 4 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 5) => (up-set-placement-data 5 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 6) => (up-set-placement-data 6 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 7) => (up-set-placement-data 7 -1 c: 9))
+(defrule (goal gl-build-at 1) (goal gl-build-near 8) => (up-set-placement-data 8 -1 c: 9))
+(defrule (goal gl-build-at 2) => (up-set-placement-data my-player-number -1 c: 22))
+
 ; ---------------------------------------------------------------- buildings by Claude's targets
 (defrule
 	(goal gl-more-barracks 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: barracks < 1)
 	(can-build barracks)
 =>
 	(build barracks))
 
 (defrule
+	(goal gl-more-barracks 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: barracks < 1)
+	(can-build barracks)
+=>
+	(up-build place-control 0 c: barracks))
+
+(defrule
 	(goal gl-more-range 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: archery-range < 1)
 	(can-build archery-range)
 =>
 	(build archery-range))
 
 (defrule
+	(goal gl-more-range 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: archery-range < 1)
+	(can-build archery-range)
+=>
+	(up-build place-control 0 c: archery-range))
+
+(defrule
 	(goal gl-more-stable 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: stable < 1)
 	(can-build stable)
 =>
 	(build stable))
 
 (defrule
+	(goal gl-more-stable 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: stable < 1)
+	(can-build stable)
+=>
+	(up-build place-control 0 c: stable))
+
+(defrule
 	(goal gl-more-workshop 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: siege-workshop < 1)
 	(can-build siege-workshop)
 =>
 	(build siege-workshop))
 
 (defrule
+	(goal gl-more-workshop 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: siege-workshop < 1)
+	(can-build siege-workshop)
+=>
+	(up-build place-control 0 c: siege-workshop))
+
+(defrule
 	(goal gl-more-blacksmith 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: blacksmith < 1)
 	(can-build blacksmith)
 =>
 	(build blacksmith))
 
 (defrule
+	(goal gl-more-blacksmith 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: blacksmith < 1)
+	(can-build blacksmith)
+=>
+	(up-build place-control 0 c: blacksmith))
+
+(defrule
 	(goal gl-more-market 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: market < 1)
 	(can-build market)
 =>
 	(build market))
 
 (defrule
+	(goal gl-more-market 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: market < 1)
+	(can-build market)
+=>
+	(up-build place-control 0 c: market))
+
+(defrule
 	(goal gl-more-monastery 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: monastery < 1)
 	(can-build monastery)
 =>
 	(build monastery))
 
 (defrule
+	(goal gl-more-monastery 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: monastery < 1)
+	(can-build monastery)
+=>
+	(up-build place-control 0 c: monastery))
+
+(defrule
 	(goal gl-more-university 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: university < 1)
 	(can-build university)
 =>
 	(build university))
 
 (defrule
+	(goal gl-more-university 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: university < 1)
+	(can-build university)
+=>
+	(up-build place-control 0 c: university))
+
+(defrule
 	(goal gl-more-castle 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: castle < 1)
 	(can-build castle)
 =>
 	(build castle))
 
 (defrule
+	(goal gl-more-castle 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: castle < 1)
+	(can-build castle)
+=>
+	(up-build place-control 0 c: castle))
+
+(defrule
 	(goal gl-more-town-center 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: town-center < 1)
 	(can-build town-center)
 =>
 	(build town-center))
 
 (defrule
+	(goal gl-more-town-center 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: town-center < 1)
+	(can-build town-center)
+=>
+	(up-build place-control 0 c: town-center))
+
+(defrule
 	(goal gl-more-tower 1)
+	(goal gl-build-at 0)
 	(up-pending-objects c: watch-tower < 1)
 	(can-build watch-tower)
 =>
 	(build watch-tower))
 
 (defrule
+	(goal gl-more-tower 1)
+	(not (goal gl-build-at 0))
+	(up-pending-objects c: watch-tower < 1)
+	(can-build watch-tower)
+=>
+	(up-build place-control 0 c: watch-tower-building))
+
+; docks need water, so they always use normal placement
+(defrule
 	(goal gl-more-dock 1)
 	(up-pending-objects c: dock < 1)
 	(can-build dock)
 =>
 	(build dock))
+
+; ---------------------------------------------------------------- walls around own town (gl-walls 1 palisade, 2 stone)
+(defrule
+	(goal gl-walls 1)
+	(goal gl-wall-ring 1)
+	(wall-completed-percentage 1 < 100)
+	(can-build-wall 1 palisade-wall)
+=>
+	(set-strategic-number sn-gate-type-for-wall 1)
+	(build-wall 1 palisade-wall))
+
+(defrule
+	(goal gl-walls 1)
+	(goal gl-wall-ring 2)
+	(wall-completed-percentage 2 < 100)
+	(can-build-wall 2 palisade-wall)
+=>
+	(set-strategic-number sn-gate-type-for-wall 1)
+	(build-wall 2 palisade-wall))
+
+(defrule
+	(goal gl-walls 2)
+	(goal gl-wall-ring 1)
+	(wall-completed-percentage 1 < 100)
+	(can-build-wall 1 stone-wall-line)
+=>
+	(set-strategic-number sn-gate-type-for-wall 0)
+	(build-wall 1 stone-wall-line))
+
+(defrule
+	(goal gl-walls 2)
+	(goal gl-wall-ring 2)
+	(wall-completed-percentage 2 < 100)
+	(can-build-wall 2 stone-wall-line)
+=>
+	(set-strategic-number sn-gate-type-for-wall 0)
+	(build-wall 2 stone-wall-line))
+
+(defrule (not (goal gl-walls 0)) (goal gl-wall-ring 1) (can-build-gate 1) => (build-gate 1))
+(defrule (not (goal gl-walls 0)) (goal gl-wall-ring 2) (can-build-gate 2) => (build-gate 2))
 
 ; ---------------------------------------------------------------- military: unit1 first, then unit2
 (defrule (goal gl-train-ok 1) (goal gl-unit1 1) (can-train militiaman-line) => (train militiaman-line))
@@ -348,6 +511,7 @@
 (defrule (goal gl-train-ok 1) (goal gl-unit2 7) (unit-type-count-total battering-ram-line < 3) (can-train battering-ram-line) => (train battering-ram-line))
 (defrule (goal gl-train-ok 1) (goal gl-unit2 7) (can-train mangonel-line) => (train mangonel-line))
 (defrule (goal gl-train-ok 1) (goal gl-unit2 8) (can-train monk) => (train monk))
+(defrule (goal gl-train-ok 1) (goal gl-uses-unique 1) (can-train my-unique-unit-line) => (train my-unique-unit-line))
 
 ; ---------------------------------------------------------------- blacksmith and unit upgrades
 (defrule (goal gl-train-ok 1) (can-research ri-forging) => (research ri-forging))
@@ -375,3 +539,5 @@
 (defrule (goal gl-uses-siege 1) (can-research ri-capped-ram) => (research ri-capped-ram))
 (defrule (goal gl-uses-siege 1) (can-research ri-onager) => (research ri-onager))
 (defrule (goal gl-uses-archer 1) (can-research ri-ballistics) => (research ri-ballistics))
+(defrule (goal gl-uses-unique 1) (can-research my-unique-unit-upgrade) => (research my-unique-unit-upgrade))
+(defrule (goal gl-train-ok 1) (current-age >= castle-age) (can-research my-unique-research) => (research my-unique-research))

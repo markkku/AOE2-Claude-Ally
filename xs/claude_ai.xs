@@ -9,7 +9,7 @@
 // Goal numbers MUST match the defconsts in ClaudeAI.per.
 
 const int cAiMagic = 20261029;
-const int cAiVersion = 2;
+const int cAiVersion = 3;
 const int cAiBuildingCount = 12;
 
 const int cGoalMyPlayer = 101;
@@ -25,7 +25,11 @@ const int cGoalWantVil = 111;
 const int cGoalUnderAttack = 112;
 const int cGoalTrainOk = 113;
 const int cGoalSaving = 114;
-// 121..128: whether unit type 1..8 is selected (as unit1 or unit2)
+const int cGoalWalls = 115;        // 0 none, 1 palisade, 2 stone
+const int cGoalWallRing = 116;     // 1 inner, 2 outer perimeter
+const int cGoalBuildAt = 117;      // 0 home, 1 near player cGoalBuildNear, 2 towards the enemy
+const int cGoalBuildNear = 118;
+// 121..129: whether unit type 1..9 is selected (as unit1 or unit2)
 const int cGoalUsesBase = 120;
 // 141..152: Claude's building targets; 161..172: 1 when more of that building is still needed.
 // Order (same as BUILDINGS in claude_ally.py): barracks, archery range, stable, siege workshop, blacksmith,
@@ -42,6 +46,8 @@ const int cUnitKnight = 5;
 const int cUnitCavArcher = 6;
 const int cUnitSiege = 7;
 const int cUnitMonk = 8;
+const int cUnitUnique = 9;
+const int cUnitCount = 9;
 
 // modes
 const int cModeDefend = 0;
@@ -122,12 +128,16 @@ void aiReadCommand() {
     int target = 0;
     int ageUp = 0;
     int vilTarget = 0;
+    int walls = 0;
+    int wallRing = 2;
+    int buildAt = 0;
+    int buildNear = 0;
     if (gAiBuildRead < 0) {
         gAiBuildRead = xsArrayCreateInt(cAiBuildingCount, 0, "");
     }
     // XS cannot parse arithmetic on the right side of a comparison, so compute it first
     int minSize = cAiBuildingCount * 4;
-    minSize = minSize + 40;
+    minSize = minSize + 56;
     if (xsGetFileSize() >= minSize) {
         magic = xsReadInt();
         version = xsReadInt();
@@ -142,6 +152,10 @@ void aiReadCommand() {
         for (k = 0; < cAiBuildingCount) {
             xsArraySetInt(gAiBuildRead, k, xsReadInt());
         }
+        walls = xsReadInt();
+        wallRing = xsReadInt();
+        buildAt = xsReadInt();
+        buildNear = xsReadInt();
     }
     xsCloseFile();
     if (needContext) {
@@ -162,32 +176,45 @@ void aiReadCommand() {
     xsSetGoal(cGoalTarget, target);
     xsSetGoal(cGoalAgeUp, ageUp);
     xsSetGoal(cGoalVilTarget, vilTarget);
+    xsSetGoal(cGoalWalls, walls);
+    xsSetGoal(cGoalWallRing, wallRing);
+    xsSetGoal(cGoalBuildAt, buildAt);
+    xsSetGoal(cGoalBuildNear, buildNear);
     for (k = 0; < cAiBuildingCount) {
         xsSetGoal(cGoalBuildTargetBase + k, xsArrayGetInt(gAiBuildRead, k));
     }
     xsSetGoal(cGoalCmdNew, 1);
 }
 
-// Whether to save resources for the next age (military production paused).
+int gAiAgeFood = 0;
+int gAiAgeGold = 0;
+
+// Whether to save resources for the next age (military production paused). Only when the age-up is
+// actually available (required buildings exist); also sets gAiAgeFood/gAiAgeGold to its cost.
 bool aiSaving(int me = 0, int age = 0, int vil = 0) {
     if (xsGetGoal(cGoalAgeUp) != 1 || age >= 3) {
         return (false);
     }
     int tech = cTechFeudal;
     int minVil = 19;
+    gAiAgeFood = 500;
+    gAiAgeGold = 0;
     if (age == 1) {
         tech = cTechCastle;
         minVil = 27;
+        gAiAgeFood = 800;
+        gAiAgeGold = 200;
     }
     if (age == 2) {
         tech = cTechImperial;
         minVil = 38;
+        gAiAgeFood = 1000;
+        gAiAgeGold = 800;
     }
     if (vil < minVil) {
         return (false);
     }
-    int state = xsGetTechState(tech, me);
-    return (state == cTechStateReady || state == cTechStateNotReady);
+    return (xsGetTechState(tech, me) == cTechStateReady);
 }
 
 
@@ -196,14 +223,24 @@ void aiUpdateFlags() {
     int age = xsPlayerAttribute(me, cAttributeCurrentAge);
     int vil = xsGetObjectCount(me, cVillagerClass);
 
-    xsSetGoal(cGoalWantVil, aiBool(vil < xsGetGoal(cGoalVilTarget)));
-
+    int vilTarget = xsGetGoal(cGoalVilTarget);
+    bool wantVil = vil < vilTarget;
     bool saving = aiSaving(me, age, vil);
     xsSetGoal(cGoalSaving, aiBool(saving));
+    // A town center that keeps training villagers can never start the age-up research,
+    // so stop villagers once the age-up is affordable.
+    if (saving) {
+        int food = xsPlayerAttribute(me, cAttributeFood);
+        int gold = xsPlayerAttribute(me, cAttributeGold);
+        if (food >= gAiAgeFood && gold >= gAiAgeGold) {
+            wantVil = false;
+        }
+    }
+    xsSetGoal(cGoalWantVil, aiBool(wantVil));
     bool trainOk = (saving == false) || xsGetGoal(cGoalUnderAttack) == 1 || xsGetGoal(cGoalMode) != cModeDefend;
     xsSetGoal(cGoalTrainOk, aiBool(trainOk));
 
-    for (u = 1; <= 8) {
+    for (u = 1; <= cUnitCount) {
         xsSetGoal(cGoalUsesBase + u, aiBool(aiUses(u)));
     }
 
@@ -260,6 +297,7 @@ void aiCollectArmy(int me = 0) {
     if (aiUses(cUnitMonk)) {
         aiAddClass(me, cMonkClass);
     }
+    // unique units belong to the classes above (infantry, archer, cavalry, ...)
 }
 
 // Player p's object/class nearest to a point (stored in gAiFound). Returns false if there is none.

@@ -28,14 +28,17 @@ from pathlib import Path
 from aoe2common import CMD_NAME, MAGIC, Reader, find_profile_dirs, find_user_base, write_atomic
 
 STATE_VERSION = 1   # state file written by claude_bridge.xs
-CMD_VERSION = 2     # command file read by claude_bridge.xs and claude_ai.xs
+CMD_VERSION = 3     # command file read by claude_bridge.xs and claude_ai.xs
 STATE_MAX_AGE = 30  # seconds; older state files (from previous games) are ignored
 ROOT = Path(__file__).resolve().parent
 
 # value = number sent to the game; order/numbers MUST match claude_ai.xs and ClaudeAI.per
 UNITS = {"militia": 1, "spear": 2, "archer": 3, "skirm": 4, "knight": 5,
-         "cav_archer": 6, "siege": 7, "monk": 8}
+         "cav_archer": 6, "siege": 7, "monk": 8, "unique": 9}
 MODES = {"defend": 0, "attack": 1, "help": 2}
+WALLS = {"none": 0, "palisade": 1, "stone": 2}
+WALL_RINGS = {"inner": 1, "outer": 2}
+BUILD_LOCATIONS = {"home": 0, "near_player": 1, "forward": 2}
 # order MUST match aiBuildingId() in claude_ai.xs; value = key in the state file
 BUILDINGS = {"barracks": "b_barracks", "archery_range": "b_range", "stable": "b_stable",
              "siege_workshop": "b_workshop", "blacksmith": "b_blacksmith", "market": "b_market",
@@ -60,40 +63,51 @@ SCHEMA = {
             "required": list(BUILDINGS),
             "additionalProperties": False,
         },
+        "walls": {"type": "string", "enum": list(WALLS)},
+        "wall_ring": {"type": "string", "enum": list(WALL_RINGS)},
+        "build_location": {"type": "string", "enum": list(BUILD_LOCATIONS)},
+        "build_near_player": {"type": "integer", "minimum": 0, "maximum": 8},
         "message": {"type": "string"},
         "reasoning": {"type": "string"},
     },
-    "required": ["unit1", "unit2", "mode", "target_player", "age_up", "villagers", "buildings", "message", "reasoning"],
+    "required": ["unit1", "unit2", "mode", "target_player", "age_up", "villagers", "buildings", "walls", "wall_ring",
+                 "build_location", "build_near_player", "message", "reasoning"],
     "additionalProperties": False,
 }
 
 SYSTEM_PROMPT = """You are the human player's teammate in Age of Empires II: Definitive Edition, commanding one computer player (the "general").
-Your AI script handles the economy by itself (villagers, houses, farms, mill, lumber and mining camps, eco upgrades) and trains the army.
-You make the strategic decisions:
+Play like a creative, cooperative human teammate: have a plan, adapt it, and go along with your ally's ideas.
+Your AI script does the routine work by itself (villagers, houses, farms, mill, lumber and mining camps, eco upgrades,
+training the units you choose and their upgrades, moving the army). Through your orders you control:
 - unit1 / unit2: main and supporting unit. The AI trains both, unit1 first.
   militia=swordsmen, spear=spearmen (anti-cavalry), archer=archers, skirm=skirmishers (anti-archer),
   knight=scout cavalry in Feudal / knights from Castle Age, cav_archer=cavalry archers (Castle Age),
-  siege=rams and mangonels (Castle Age, against buildings), monk=monks (Castle Age).
-  Counter the enemy's visible units and respect the current age.
+  siege=rams and mangonels (Castle Age, against buildings), monk=monks (Castle Age),
+  unique=your civilization's unique unit (trained at a castle, so order a castle).
 - mode: defend = army stays home; attack = the whole army attacks player target_player;
   help = the army goes to ally target_player's town center.
   Do not attack with a tiny army (below ~15 soldiers) unless the enemy is weak. If an ally has "threat" > 0, consider helping.
-- age_up: whether to save resources for the next age (military production pauses, except while attacking or under attack).
+- age_up: go to the next age as soon as possible (villager and military production pause briefly to afford it).
+  The age-up only becomes possible once its required buildings exist:
+  Feudal: barracks (mill and lumber camp come automatically); Castle: 2 of blacksmith, market, archery_range, stable;
+  Imperial: a castle OR 2 of university, monastery, siege_workshop.
 - villagers: target number of villagers (usually 60-100).
-- buildings: TOTAL target count per building type (not how many to add). The AI builds until the count is met;
-  lowering a number never deletes buildings.
-  Types: barracks, archery_range, stable, siege_workshop, blacksmith, market, monastery, university, castle, town_center, tower, dock.
-  A unit cannot be trained without its building (militia/spear -> barracks, archer/skirm/cav_archer -> archery_range,
-  knight -> stable, siege -> siege_workshop, monk -> monastery).
-  Age requirements: Feudal needs barracks (mill and lumber camp come automatically); Castle needs 2 Feudal buildings
-  (blacksmith, market, archery_range, stable); Imperial needs a castle OR 2 Castle buildings (university, monastery, siege_workshop).
-  Buildings not yet available in the current age are built automatically once they become available.
-  Buildings cost resources - do not order more production buildings than the economy can keep busy (about 1 per 8-10 villagers).
+- buildings: TOTAL target count per type (not how many to add): barracks, archery_range, stable, siege_workshop,
+  blacksmith, market, monastery, university, castle, town_center, tower, dock. The AI builds until the count is met
+  (lowering a number never deletes buildings). Buildings not yet available in the current age are built once they are.
+  Do not order more production buildings than the economy can keep busy (about 1 per 8-10 villagers).
+- build_location: where NEW buildings from your targets are placed: home = your own town, near_player = next to the
+  town center of player build_near_player (e.g. the human, to build one big shared city or defend them with towers
+  and a castle), forward = towards the enemy (forward towers or castle).
+- walls / wall_ring: none, palisade or stone wall around YOUR town (with gates); inner = tight ring, outer = wide ring.
+  Walls cannot be placed around another player's town; offer towers / a castle near them instead.
 - message: a short chat message to the human (max 120 characters). {language}
-  If the human wrote to you, answer them directly. If nothing important changed and the human said nothing,
-  leave message empty "" (do not spam the chat).
+  If the human wrote to you, answer them directly and act on their request with the closest thing you can order.
+  Never answer that your "script" cannot do something; say what you will do instead. If nothing important changed
+  and the human said nothing, leave message empty "" (do not spam the chat).
 - reasoning: 1-2 sentences on why (goes to the log only).
-You only see enemy units that are currently visible (vis_*). Requests from the human ("help me", "attack blue") have high priority.
+You only see enemy units that are currently visible (vis_*). Requests from the human ("help me", "attack blue",
+"build near me", "wall us in") have high priority.
 Player colors: 1 blue, 2 red, 3 green, 4 yellow, 5 cyan, 6 purple, 7 grey, 8 orange."""
 
 
@@ -285,6 +299,7 @@ def encode_cmd(seq, claude, d, ascii_only):
     ints = [MAGIC, CMD_VERSION, seq, claude, UNITS[d["unit1"]], UNITS[d["unit2"]], MODES[d["mode"]],
             d["target_player"], 1 if d["age_up"] else 0, d["villagers"]]
     ints += [int(d["buildings"].get(b, 0)) for b in BUILDINGS]
+    ints += [WALLS[d["walls"]], WALL_RINGS[d["wall_ring"]], BUILD_LOCATIONS[d["build_location"]], d["build_near_player"]]
     return struct.pack(f"<{len(ints)}i", *ints) + struct.pack("<I", len(msg)) + msg
 
 
@@ -299,6 +314,9 @@ def validate(d, st, claude):
             d["mode"] = "defend"
     if d["mode"] == "help" and (t not in players or not players[t].get("team") or t == claude):
         d["mode"], d["target_player"] = "defend", 0
+    near = d.get("build_near_player", 0)
+    if d["build_location"] == "near_player" and (near not in players or not players[near].get("team")):
+        d["build_location"], d["build_near_player"] = "home", 0
     return d
 
 
@@ -436,7 +454,8 @@ class Ally:
         parts = [describe_state(self.state, self.claude_player(), self.human_player())]
         if self.last:
             parts.append("YOUR CURRENT ORDERS: " + json.dumps({k: self.last[k] for k in
-                         ("unit1", "unit2", "mode", "target_player", "age_up", "villagers", "buildings")}))
+                         ("unit1", "unit2", "mode", "target_player", "age_up", "villagers", "buildings",
+                          "walls", "wall_ring", "build_location", "build_near_player")}))
         if self.history:
             parts.append("RECENT CHAT:\n" + "\n".join(self.history[-8:]))
         if self.pending_chat:
@@ -470,7 +489,9 @@ class Ally:
             tgt = f" -> P{d['target_player']}" if d["mode"] != "defend" else ""
             log(f"Claude ({dt:.1f}s, {reason}): {d['unit1']} + {d['unit2']}, {d['mode']}{tgt}, "
                 f"age up={'yes' if d['age_up'] else 'no'}, villagers={d['villagers']}")
-            log("  buildings: " + ", ".join(f"{b} {n}" for b, n in d["buildings"].items() if n))
+            where = d["build_location"] + (f" P{d['build_near_player']}" if d["build_location"] == "near_player" else "")
+            log("  buildings: " + ", ".join(f"{b} {n}" for b, n in d["buildings"].items() if n)
+                + f" | build at {where} | walls {d['walls']}" + ("" if d["walls"] == "none" else f" ({d['wall_ring']})"))
             if d.get("message"):
                 log(f"  chat: {d['message']}")
             log(f"  why: {d.get('reasoning', '')}")

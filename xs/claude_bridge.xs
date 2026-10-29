@@ -8,13 +8,14 @@
 // 2) Every 2 game seconds reads claude_cmd.xsdat and, when seq is new, shows Claude's message
 //    in chat. The command itself is carried out by the AI (claude_ai.xs + ClaudeAI.per).
 //
-// claude_cmd.xsdat (version 2): int magic, int version, int seq, int claudePlayer, int unit1, int unit2,
-//                   int mode, int target, int ageUp, int vilTarget, 12 x int building targets, string message
+// claude_cmd.xsdat (version 3): int magic, int version, int seq, int claudePlayer, int unit1, int unit2,
+//                   int mode, int target, int ageUp, int vilTarget, 12 x int building targets,
+//                   int walls, int wallRing, int buildAt, int buildNearPlayer, string message
 
 const int cBrMagic = 20261029;
 const int cBrVersion = 1;
-const int cBrCmdVersion = 2;
-const int cBrCmdInts = 22;
+const int cBrCmdVersion = 3;
+const int cBrCmdInts = 26;
 const int cBrTownCenter = 109;
 const int cBrCastle = 82;
 const int cBrThreatRadius = 20;
@@ -113,7 +114,9 @@ string brTeamInfo(int p = 0) {
     int gold = xsPlayerAttribute(p, cAttributeGold);
     int stone = xsPlayerAttribute(p, cAttributeStone);
     int pop = xsPlayerAttribute(p, cAttributePopulation);
-    int popcap = xsPlayerAttribute(p, cAttributePopulationCap);
+    // attribute 4 is the free population room (headroom), not the cap
+    int headroom = xsPlayerAttribute(p, cAttributePopulationCap);
+    int popcap = pop + headroom;
     int kills = xsPlayerAttribute(p, cAttributeKills);
     string s = brCommon(p);
     s = s + ";food=" + food + ";wood=" + wood + ";gold=" + gold + ";stone=" + stone;

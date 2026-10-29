@@ -14,9 +14,10 @@ and Claude answers within seconds, in your language.
    └──(AI script + XS carry it out)── claude_cmd.xsdat ◄──┘
 ```
 
-- **Claude decides:** main and support unit, building targets (barracks, ranges, stables, siege workshop,
-  blacksmith, market, monastery, university, castle, town centers, towers, docks), aging up, villager count,
-  mode (defend / attack player X / help ally X), and what to say in chat.
+- **Claude decides:** main and support unit (incl. the civ's unique unit), building targets (barracks, ranges,
+  stables, siege workshop, blacksmith, market, monastery, university, castle, town centers, towers, docks), where new
+  buildings go (own town, next to an ally — e.g. one big shared city — or towards the enemy), palisade or stone walls
+  with gates, aging up, villager count, mode (defend / attack player X / help ally X), and what to say in chat.
 - **The AI script does the rest:** villagers, houses, farms, mill, lumber and mining camps, eco upgrades,
   training the chosen units and their upgrades, moving the army.
 - **Fair play:** Claude only sees your team's data and the enemy units that are currently visible to you.
