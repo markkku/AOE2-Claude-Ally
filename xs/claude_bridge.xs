@@ -216,7 +216,10 @@ void brReadCommand() {
     if (xsOpenFile("claude_cmd") == false) {
         return;
     }
-    if (xsGetFileSize() < cBrCmdInts * 4 + 4) {
+    // XS cannot parse arithmetic on the right side of a comparison, so compute it first
+    int minSize = cBrCmdInts * 4;
+    minSize = minSize + 4;
+    if (xsGetFileSize() < minSize) {
         xsCloseFile();
         return;
     }
@@ -225,7 +228,8 @@ void brReadCommand() {
     int seq = xsReadInt();
     int claude = xsReadInt();
     // the remaining ints (units, mode, buildings) are used by the AI
-    xsSetFilePosition(cBrCmdInts * 4);
+    int msgPos = cBrCmdInts * 4;
+    xsSetFilePosition(msgPos);
     string msg = xsReadString();
     xsCloseFile();
 

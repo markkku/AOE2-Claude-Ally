@@ -125,7 +125,10 @@ void aiReadCommand() {
     if (gAiBuildRead < 0) {
         gAiBuildRead = xsArrayCreateInt(cAiBuildingCount, 0, "");
     }
-    if (xsGetFileSize() >= 40 + cAiBuildingCount * 4) {
+    // XS cannot parse arithmetic on the right side of a comparison, so compute it first
+    int minSize = cAiBuildingCount * 4;
+    minSize = minSize + 40;
+    if (xsGetFileSize() >= minSize) {
         magic = xsReadInt();
         version = xsReadInt();
         seq = xsReadInt();
@@ -207,7 +210,8 @@ void aiUpdateFlags() {
     // buildings: keep building until Claude's target is met (counts ones under construction too)
     for (k = 0; < cAiBuildingCount) {
         int have = xsGetObjectCountTotal(me, aiBuildingId(k));
-        xsSetGoal(cGoalBuildMoreBase + k, aiBool(have < xsGetGoal(cGoalBuildTargetBase + k)));
+        int wanted = xsGetGoal(cGoalBuildTargetBase + k);
+        xsSetGoal(cGoalBuildMoreBase + k, aiBool(have < wanted));
     }
 }
 
