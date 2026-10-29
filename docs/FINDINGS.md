@@ -57,6 +57,7 @@ the same mechanism (`ai/Promisory/scoutcontrol.per` → `xs/ailib/Geometry.xs`).
 - XS `rule`s do not run per AI player (airef), so AI-side XS uses only functions called by `xs-script-call`.
   Global XS variables are separate for each AI player.
 - Verified: a value written by Python reached a `.per` rule and was printed with `up-chat-data-to-all`.
+- Gotcha: a rule with too many facts + actions fails with ERR6002 "Rule too long" (27 worked, 32 did not); split long rules.
 - Gotcha: the AI command is `enable-timer`, not `enable-timers` (error 2005 "invalid identifier").
 - Gotcha: the game's XS parser rejects arithmetic on the right side of a comparison, e.g.
   `if (xsGetFileSize() < n * 4 + 4)` → error 0308 "illogical or invalid expression" (the `xs-check` linter accepts it).

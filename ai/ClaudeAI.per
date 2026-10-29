@@ -70,6 +70,12 @@
 	(set-goal gl-walls 0)
 	(set-goal gl-wall-ring 2)
 	(set-goal gl-build-at 0)
+	(disable-self))
+
+; split into several rules: the game rejects rules with too many actions (ERR6002 "Rule too long")
+(defrule
+	(true)
+=>
 	(enable-wall-placement 1)
 	(enable-wall-placement 2)
 	(set-strategic-number sn-percent-civilian-explorers 0)
@@ -84,6 +90,11 @@
 	(set-strategic-number sn-mill-max-distance 25)
 	(set-strategic-number sn-enable-boar-hunting 0)
 	(set-strategic-number sn-enable-training-queue 1)
+	(disable-self))
+
+(defrule
+	(true)
+=>
 	(xs-script-call "claudeAiInit")
 	; recorded in the game's replay file; claude_ally.py uses it to detect which player is ClaudeAI
 	(up-chat-data-to-all "ClaudeAI ready, player %d" g: gl-my-player)
